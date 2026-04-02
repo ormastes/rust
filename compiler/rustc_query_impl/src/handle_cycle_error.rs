@@ -9,11 +9,14 @@ use rustc_errors::{Applicability, Diag, MultiSpan, pluralize, struct_span_code_e
 use rustc_hir as hir;
 use rustc_hir::def::{DefKind, Res};
 use rustc_middle::bug;
-use rustc_middle::queries::TaggedQueryKey;
+use rustc_middle::queries::{
+    TaggedQueryKey, check_representability, check_representability_adt_ty, fn_sig, layout_of,
+    variances_of,
+};
 use rustc_middle::query::Cycle;
 use rustc_middle::ty::layout::LayoutError;
 use rustc_middle::ty::{self, Ty, TyCtxt};
-use rustc_span::def_id::{DefId, LocalDefId};
+use rustc_span::def_id::LocalDefId;
 use rustc_span::{ErrorGuaranteed, Span};
 
 use crate::job::create_cycle_error;
@@ -27,15 +30,15 @@ pub(crate) fn default(err: Diag<'_>) -> ! {
 
 pub(crate) fn fn_sig<'tcx>(
     tcx: TyCtxt<'tcx>,
-    def_id: DefId,
+    key: fn_sig::Key<'tcx>,
     _: Cycle<'tcx>,
     err: Diag<'_>,
-) -> ty::EarlyBinder<'tcx, ty::PolyFnSig<'tcx>> {
+) -> fn_sig::Value<'tcx> {
     let guar = err.delay_as_bug();
 
     let err = Ty::new_error(tcx, guar);
 
-    let arity = if let Some(node) = tcx.hir_get_if_local(def_id)
+    let arity = if let Some(node) = tcx.hir_get_if_local(key)
         && let Some(sig) = node.fn_sig()
     {
         sig.decl.inputs.len()
@@ -55,19 +58,19 @@ pub(crate) fn fn_sig<'tcx>(
 
 pub(crate) fn check_representability<'tcx>(
     tcx: TyCtxt<'tcx>,
-    _key: LocalDefId,
+    _key: check_representability::Key<'tcx>,
     cycle: Cycle<'tcx>,
     _err: Diag<'_>,
-) {
+) -> check_representability::Value<'tcx> {
     check_representability_inner(tcx, cycle);
 }
 
 pub(crate) fn check_representability_adt_ty<'tcx>(
     tcx: TyCtxt<'tcx>,
-    _key: Ty<'tcx>,
+    _key: check_representability_adt_ty::Key<'tcx>,
     cycle: Cycle<'tcx>,
     _err: Diag<'_>,
-) {
+) -> check_representability_adt_ty::Value<'tcx> {
     check_representability_inner(tcx, cycle);
 }
 
@@ -104,12 +107,12 @@ fn check_representability_inner<'tcx>(tcx: TyCtxt<'tcx>, cycle: Cycle<'tcx>) -> 
 
 pub(crate) fn variances_of<'tcx>(
     tcx: TyCtxt<'tcx>,
-    def_id: DefId,
+    key: variances_of::Key<'tcx>,
     _cycle: Cycle<'tcx>,
     err: Diag<'_>,
-) -> &'tcx [ty::Variance] {
+) -> variances_of::Value<'tcx> {
     let _guar = err.delay_as_bug();
-    let n = tcx.generics_of(def_id).own_params.len();
+    let n = tcx.generics_of(key).own_params.len();
     tcx.arena.alloc_from_iter(iter::repeat_n(ty::Bivariant, n))
 }
 
@@ -134,10 +137,10 @@ fn search_for_cycle_permutation<Q, T>(
 
 pub(crate) fn layout_of<'tcx>(
     tcx: TyCtxt<'tcx>,
-    _key: ty::PseudoCanonicalInput<'tcx, Ty<'tcx>>,
+    _key: layout_of::Key<'tcx>,
     cycle: Cycle<'tcx>,
     err: Diag<'_>,
-) -> Result<ty::layout::TyAndLayout<'tcx>, &'tcx ty::layout::LayoutError<'tcx>> {
+) -> layout_of::Value<'tcx> {
     let _guar = err.delay_as_bug();
     let diag = search_for_cycle_permutation(
         &cycle.frames,
