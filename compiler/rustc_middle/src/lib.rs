@@ -49,6 +49,7 @@
 #![feature(range_bounds_is_empty)]
 #![feature(rustc_attrs)]
 #![feature(sized_hierarchy)]
+#![feature(stmt_expr_attributes)]
 #![feature(trait_alias)]
 #![feature(try_blocks)]
 #![feature(try_trait_v2)]
