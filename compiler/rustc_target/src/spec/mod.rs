@@ -1573,7 +1573,12 @@ supported_targets! {
 
     ("x86_64-unknown-l4re-uclibc", x86_64_unknown_l4re_uclibc),
 
+    ("x86_64-unknown-simpleos", x86_64_unknown_simpleos),
+    ("riscv64gc-unknown-simpleos", riscv64gc_unknown_simpleos),
+    ("riscv32imac-unknown-simpleos", riscv32imac_unknown_simpleos),
+
     ("aarch64-unknown-redox", aarch64_unknown_redox),
+    ("aarch64-unknown-simpleos",              aarch64_unknown_simpleos),
     ("i586-unknown-redox", i586_unknown_redox),
     ("riscv64gc-unknown-redox", riscv64gc_unknown_redox),
     ("x86_64-unknown-redox", x86_64_unknown_redox),
