@@ -2112,6 +2112,11 @@ impl Compiler {
     }
 }
 
+/// Returns `true` for any `*-unknown-simpleos` target triple.
+pub fn is_simpleos_triple(triple: &str) -> bool {
+    triple.ends_with("-unknown-simpleos")
+}
+
 fn envify(s: &str) -> String {
     s.chars()
         .map(|c| match c {

@@ -174,6 +174,18 @@ fn main() {
         return;
     }
 
+    // SimpleOS: honour an explicit LLVM_CONFIG env var without requiring the
+    // ci-llvm detection path.  This is a no-op for all other targets because
+    // the existing code below also reads LLVM_CONFIG via tracked_env_var_os.
+    println!("cargo:rerun-if-env-changed=LLVM_CONFIG");
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("simpleos") {
+        if env::var("LLVM_CONFIG").is_err() {
+            // No LLVM_CONFIG provided — nothing to link against yet; skip.
+            return;
+        }
+        // Fall through: the standard LLVM_CONFIG path below handles the rest.
+    }
+
     restore_library_path();
 
     let llvm_config =

@@ -48,6 +48,10 @@ cfg_select! {
         mod uefi;
         pub use self::uefi::*;
     }
+    target_os = "simpleos" => {
+        mod simpleos;
+        pub use self::simpleos::*;
+    }
     all(target_vendor = "fortanix", target_env = "sgx") => {
         mod sgx;
         pub use self::sgx::*;
