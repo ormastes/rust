@@ -5,7 +5,7 @@
 
 use crate::spec::{Arch, Cc, Env, LinkerFlavor, Lld, LlvmAbi, Os, PanicStrategy, RelocModel, StackProbeType, Target, TargetOptions};
 
-pub fn target() -> Target {
+pub(crate) fn target() -> Target {
     let opts = TargetOptions {
         os: Os::SimpleOs,
         env: Env::Unspecified,
@@ -33,7 +33,7 @@ pub fn target() -> Target {
         llvm_abiname: LlvmAbi::Ilp32,
         supported_sanitizers: crate::spec::SanitizerSet::empty(),
         pre_link_args: crate::spec::TargetOptions::link_args(
-            LinkerFlavor::Gnu(Cc::No, Lld::Yes),
+            LinkerFlavor::Gnu(Cc::No, Lld::No),
             &[
                 "-T",
                 "${SDKROOT}/share/simpleos/simpleos.ld",
@@ -41,7 +41,7 @@ pub fn target() -> Target {
             ],
         ),
         post_link_args: crate::spec::TargetOptions::link_args(
-            LinkerFlavor::Gnu(Cc::No, Lld::Yes),
+            LinkerFlavor::Gnu(Cc::No, Lld::No),
             &["-lsimpleos_c"],
         ),
         ..Default::default()
