@@ -1,8 +1,6 @@
-//! SimpleOS thread — Wave-3 scaffold (cooperative scheduler stub).
-//! All entry points return `Unsupported` io::Error or are no-ops.
-//! Wave-4 plan: wire `Thread::new` to the SimpleOS cooperative scheduler via
-//! `scheduler.clone_task` (interface IF-02); `sleep` and `yield_now` will
-//! delegate to scheduler yield / nanosleep primitives.
+//! SimpleOS thread — Wave-4: pthread trampoline over libsimpleos_c shim.
+//! Thread::new/join/yield_now wired to pthread_create/join/sched_yield.
+//! Thread::sleep, set_name remain stubs (Wave-5 scope).
 
 use crate::ffi::CStr;
 use crate::io;
@@ -10,48 +8,84 @@ use crate::num::NonZero;
 use crate::thread::ThreadInit;
 use crate::time::Duration;
 
-// Silence dead code warnings for the otherwise unused ThreadInit::init() call.
-#[expect(dead_code)]
-fn dummy_init_call(init: Box<ThreadInit>) {
-    drop(init.init());
+use core::ffi::c_void;
+use core::ptr::null_mut;
+
+extern "C" {
+    fn pthread_create(
+        th: *mut usize,
+        attr: *const c_void,
+        start: extern "C" fn(*mut c_void) -> *mut c_void,
+        arg: *mut c_void,
+    ) -> i32;
+    fn pthread_join(th: usize, ret: *mut *mut c_void) -> i32;
+    fn pthread_self() -> usize;
+    fn pthread_detach(th: usize) -> i32;
+    fn sched_yield() -> i32;
 }
 
-pub struct Thread(!);
+/// C-ABI trampoline: unboxes the `Box<dyn FnOnce() + Send>` and calls it.
+extern "C" fn thread_start(arg: *mut c_void) -> *mut c_void {
+    // Safety: arg is a Box<dyn FnOnce() + Send> leaked via Box::into_raw in Thread::new.
+    unsafe {
+        let f: Box<Box<dyn FnOnce() + Send>> =
+            Box::from_raw(arg as *mut Box<dyn FnOnce() + Send>);
+        (*f)();
+    }
+    null_mut()
+}
+
+pub struct Thread(usize);
 
 pub const DEFAULT_MIN_STACK_SIZE: usize = 64 * 1024;
 
 impl Thread {
     // unsafe: see thread::Builder::spawn_unchecked for safety requirements
-    /// Wave-4: delegate to SimpleOS cooperative scheduler via `scheduler.clone_task` (IF-02).
-    pub unsafe fn new(_stack: usize, _init: Box<ThreadInit>) -> io::Result<Thread> {
-        Err(io::Error::UNSUPPORTED_PLATFORM)
+    pub unsafe fn new(_stack: usize, init: Box<ThreadInit>) -> io::Result<Thread> {
+        // init.init() sets up TLS current-thread state and returns the user closure.
+        let f: Box<dyn FnOnce() + Send> = init.init();
+        // Double-box for a stable fat-pointer round-trip through *mut c_void.
+        let raw = Box::into_raw(Box::new(f)) as *mut c_void;
+
+        let mut tid: usize = 0;
+        let ret = pthread_create(&mut tid, null_mut(), thread_start, raw);
+        if ret == 0 {
+            Ok(Thread(tid))
+        } else {
+            // Reclaim the allocation on failure so we don't leak.
+            drop(Box::from_raw(raw as *mut Box<dyn FnOnce() + Send>));
+            Err(io::Error::from_raw_os_error(ret))
+        }
     }
 
     pub fn join(self) {
-        self.0
+        unsafe {
+            pthread_join(self.0, null_mut());
+        }
     }
 }
 
-/// Wave-4: query scheduler task count or libc sysconf(_SC_NPROCESSORS_ONLN).
+/// Wave-5: wire to libc sysconf(_SC_NPROCESSORS_ONLN).
 pub fn available_parallelism() -> io::Result<NonZero<usize>> {
     Err(io::Error::UNKNOWN_THREAD_COUNT)
 }
 
 pub fn current_os_id() -> Option<u64> {
-    None
+    Some(unsafe { pthread_self() } as u64)
 }
 
-/// Wave-4: delegate to scheduler yield primitive.
 pub fn yield_now() {
-    // Wave-3: no-op; Wave-4 calls scheduler.yield_current()
+    unsafe {
+        sched_yield();
+    }
 }
 
-/// Wave-4: wire to scheduler nanosleep or libc nanosleep.
+/// Wave-5: wire to pthread_setname_np.
 pub fn set_name(_name: &CStr) {
-    // Wave-3: no-op
+    // no-op
 }
 
-/// Wave-4: wire to libc nanosleep or scheduler sleep primitive.
+/// Wave-5: wire to nanosleep.
 pub fn sleep(_dur: Duration) {
-    panic!("can't sleep");
+    panic!("thread::sleep not yet implemented on SimpleOS");
 }
