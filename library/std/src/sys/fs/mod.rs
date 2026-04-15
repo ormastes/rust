@@ -45,6 +45,10 @@ cfg_select! {
         mod vexos;
         use vexos as imp;
     }
+    target_os = "simpleos" => {
+        mod simpleos;
+        use simpleos as imp;
+    }
     _ => {
         mod unsupported;
         use unsupported as imp;
