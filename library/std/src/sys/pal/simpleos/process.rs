@@ -1,7 +1,5 @@
-//! SimpleOS process — Wave-3 scaffold.
-//! `Command::spawn` is not yet wired; all entry points return `Unsupported` io::Error.
-//! Wave-4 plan: replace `spawn` body with `libc::fork()` + `execvp()` trampolines,
-//! implemented via `simpleos_fork.c` / `simpleos_ipc.c` from the libsimpleos_c layer.
+//! SimpleOS process — Wave-4: spawn/wait/kill wired to libsimpleos_c trampolines.
+//! env_*, Stdio routing, and output capture remain Wave-3 Unsupported.
 
 use crate::sys::process::env::{CommandEnv, CommandEnvs};
 pub use crate::ffi::OsString as EnvKey;
@@ -12,6 +10,14 @@ use crate::process::StdioPipes;
 use crate::sys::fs::File;
 use crate::sys::unsupported;
 use crate::{fmt, io};
+
+extern "C" {
+    fn fork() -> i32;
+    fn execvp(file: *const u8, argv: *const *const u8) -> i32;
+    fn waitpid(pid: i32, status: *mut i32, options: i32) -> i32;
+    fn _exit(code: i32) -> !;
+    fn kill(pid: i32, sig: i32) -> i32;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Command
@@ -98,17 +104,44 @@ impl Command {
         self.cwd.as_ref().map(|cs| Path::new(cs))
     }
 
-    /// Wave-4: wire to `libc::fork()` + `execvp()` via simpleos_fork.c trampolines.
     pub fn spawn(
         &mut self,
         _default: Stdio,
         _needs_stdin: bool,
     ) -> io::Result<(Process, StdioPipes)> {
-        unsupported()
+        // Build a NUL-terminated argv: [program, arg1, ..., null].
+        let mut argv_owned: Vec<Vec<u8>> = self
+            .args
+            .iter()
+            .map(|s| {
+                let mut v = s.as_encoded_bytes().to_vec();
+                v.push(0);
+                v
+            })
+            .collect();
+        let mut argv_ptrs: Vec<*const u8> =
+            argv_owned.iter_mut().map(|v| v.as_ptr()).collect();
+        argv_ptrs.push(core::ptr::null());
+
+        let pid = unsafe { fork() };
+        match pid {
+            -1 => Err(io::Error::last_os_error()),
+            0 => {
+                // Child: exec, then bail.
+                unsafe {
+                    execvp(argv_ptrs[0], argv_ptrs.as_ptr());
+                    _exit(127);
+                }
+            }
+            child_pid => {
+                let pipes = StdioPipes { stdin: None, stdout: None, stderr: None };
+                Ok((Process { pid: child_pid }, pipes))
+            }
+        }
     }
 }
 
-/// Wave-4: wire to real fork+exec output capture.
+/// Wave-4: output capture still unsupported (wave-5).
 pub fn output(_cmd: &mut Command) -> io::Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
     unsupported()
 }
@@ -194,58 +227,44 @@ impl fmt::Debug for Command {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default)]
-#[non_exhaustive]
-pub struct ExitStatus();
+pub struct ExitStatus(i32);
 
 impl ExitStatus {
+    fn from_raw(raw: i32) -> Self {
+        ExitStatus(raw)
+    }
+
     pub fn exit_ok(&self) -> Result<(), ExitStatusError> {
-        Ok(())
+        if self.0 == 0 { Ok(()) } else { Err(ExitStatusError(self.0)) }
     }
 
     pub fn code(&self) -> Option<i32> {
-        Some(0)
+        // WIFEXITED / WEXITSTATUS equivalent (portable bit layout).
+        if (self.0 & 0x7f) == 0 { Some((self.0 >> 8) & 0xff) } else { None }
     }
 }
 
 impl fmt::Display for ExitStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<dummy exit status>")
+        match self.code() {
+            Some(c) => write!(f, "exit status: {c}"),
+            None => write!(f, "signal: {}", self.0 & 0x7f),
+        }
     }
 }
 
-pub struct ExitStatusError(!);
-
-impl Clone for ExitStatusError {
-    fn clone(&self) -> ExitStatusError {
-        self.0
-    }
-}
-
-impl Copy for ExitStatusError {}
-
-impl PartialEq for ExitStatusError {
-    fn eq(&self, _other: &ExitStatusError) -> bool {
-        self.0
-    }
-}
-
-impl Eq for ExitStatusError {}
-
-impl fmt::Debug for ExitStatusError {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-    }
-}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ExitStatusError(i32);
 
 impl Into<ExitStatus> for ExitStatusError {
     fn into(self) -> ExitStatus {
-        self.0
+        ExitStatus(self.0)
     }
 }
 
 impl ExitStatusError {
     pub fn code(self) -> Option<NonZero<i32>> {
-        self.0
+        NonZero::new(self.0)
     }
 }
 
@@ -267,23 +286,42 @@ impl From<u8> for ExitCode {
     }
 }
 
-pub struct Process(!);
+pub struct Process {
+    pid: i32,
+}
 
 impl Process {
     pub fn id(&self) -> u32 {
-        self.0
+        self.pid as u32
     }
 
     pub fn kill(&mut self) -> io::Result<()> {
-        self.0
+        // SIGKILL = 9
+        let ret = unsafe { kill(self.pid, 9) };
+        if ret == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
     }
 
     pub fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.0
+        let mut status: i32 = 0;
+        let ret = unsafe { waitpid(self.pid, &mut status, 0) };
+        if ret == -1 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(ExitStatus::from_raw(status))
+        }
     }
 
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.0
+        // WNOHANG = 1
+        let mut status: i32 = 0;
+        let ret = unsafe { waitpid(self.pid, &mut status, 1) };
+        if ret == -1 {
+            Err(io::Error::last_os_error())
+        } else if ret == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(ExitStatus::from_raw(status)))
+        }
     }
 }
 
@@ -327,7 +365,6 @@ pub fn read_output(
     match out.diverge() {}
 }
 
-/// Wave-4: return real PID via libc::getpid().
 pub fn getpid() -> u32 {
     panic!("no pids on this platform")
 }
