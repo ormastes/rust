@@ -2006,6 +2006,7 @@ crate::target_spec_enum! {
         Qurt = "qurt",
         Redox = "redox",
         Rtems = "rtems",
+        SimpleOs = "simpleos",
         Solaris = "solaris",
         SolidAsp3 = "solid_asp3",
         TeeOs = "teeos",

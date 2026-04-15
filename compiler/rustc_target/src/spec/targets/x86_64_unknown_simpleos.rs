@@ -2,12 +2,12 @@
 // Built-in rustc target spec for x86_64-unknown-simpleos.
 // Mirrors src/os/toolchain/rust/x86_64-unknown-simpleos.json.
 
-use crate::spec::{Cc, LinkerFlavor, Lld, PanicStrategy, RelocModel, StackProbeType, Target, TargetOptions};
+use crate::spec::{Arch, Cc, Env, LinkerFlavor, Lld, Os, PanicStrategy, RelocModel, StackProbeType, Target, TargetOptions};
 
 pub fn target() -> Target {
     let opts = TargetOptions {
-        os: "simpleos".into(),
-        env: "".into(),
+        os: Os::SimpleOs,
+        env: Env::Unspecified,
         vendor: "unknown".into(),
         linker_flavor: LinkerFlavor::Gnu(Cc::No, Lld::Yes),
         linker: Some("rust-lld".into()),
@@ -54,7 +54,7 @@ pub fn target() -> Target {
         },
         pointer_width: 64,
         data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128".into(),
-        arch: "x86_64".into(),
+        arch: Arch::X86_64,
         options: opts,
     }
 }

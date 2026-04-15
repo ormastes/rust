@@ -3,12 +3,12 @@
 // Modeled on riscv64gc_unknown_none_elf.rs; mirrors
 // src/os/toolchain/rust/riscv64gc-unknown-simpleos.json.
 
-use crate::spec::{Cc, LinkerFlavor, Lld, PanicStrategy, RelocModel, StackProbeType, Target, TargetOptions};
+use crate::spec::{Arch, Cc, Env, LinkerFlavor, Lld, LlvmAbi, Os, PanicStrategy, RelocModel, StackProbeType, Target, TargetOptions};
 
 pub fn target() -> Target {
     let opts = TargetOptions {
-        os: "simpleos".into(),
-        env: "".into(),
+        os: Os::SimpleOs,
+        env: Env::Unspecified,
         vendor: "unknown".into(),
         linker_flavor: LinkerFlavor::Gnu(Cc::No, Lld::Yes),
         linker: Some("rust-lld".into()),
@@ -29,7 +29,7 @@ pub fn target() -> Target {
         position_independent_executables: false,
         static_position_independent_executables: false,
         features: "+m,+a,+f,+d,+c".into(),
-        llvm_abiname: "lp64d".into(),
+        llvm_abiname: LlvmAbi::Lp64d,
         supported_sanitizers: crate::spec::SanitizerSet::empty(),
         pre_link_args: crate::spec::TargetOptions::link_args(
             LinkerFlavor::Gnu(Cc::No, Lld::Yes),
@@ -56,7 +56,7 @@ pub fn target() -> Target {
         },
         pointer_width: 64,
         data_layout: "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128".into(),
-        arch: "riscv64".into(),
+        arch: Arch::RiscV64,
         options: opts,
     }
 }
